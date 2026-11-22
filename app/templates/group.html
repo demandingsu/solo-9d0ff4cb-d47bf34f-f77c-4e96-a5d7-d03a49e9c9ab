@@ -14,7 +14,7 @@
       <td class="mono">{{ view.trows[tid].source }}/{{ view.trows[tid].ticket_no }}</td>
       <td class="mono">{{ view.trows[tid].pole_source }}/{{ view.trows[tid].pole_no }}</td>
       <td>{% if tid in view.verified_ticket_ids %}
-        <span class="tag ok">已核对 → {{ view.arows[view.assignment[tid]].asset_no if view.assignment and tid in view.assignment else '资产已不在组内' }}</span>
+        <span class="tag ok">已核对 → {{ view.arows[view.assignment[tid]].asset_no if tid in view.assignment else '原号回查' }}</span>
       {% else %}<span class="muted">未核对</span>{% endif %}</td>
     </tr>
     {% endfor %}
@@ -28,10 +28,41 @@
     {% if view.feasible %}<span class="tag ok">可以</span>
     {% else %}<span class="tag bad">不可以，需要撤销同杆确认</span>{% endif %}
   </p>
+  <p class="muted" style="margin-top:0">判定依据：当前生效资产清单第 {{ view.asset_version_id or '—' }} 版。
+    已核对单沿用原资产号并在本组占号；待核对单只能用同组空余活动资产号。</p>
   {% if view.selection %}
   <p><span class="tag info">当前已选方案：撤销 {{ view.selection.edge_label }}</span>
-     <span class="muted">（补传资料后再次执行会按最新资料复算；不满足条件时须改选）</span></p>
+     <span class="muted">（补传资料或换表后再次执行会按提交时生效的整版清单复算；不满足条件时须改选）</span></p>
   {% endif %}
+</div>
+
+<div class="card">
+  <h2>组内资产号状态（同一套规则用于组详情与撤销复算）</h2>
+  <table>
+    <tr><th>资产号</th><th>当前所挂灯杆</th><th>状态</th><th>说明</th></tr>
+    {% for aid in view.asset_ids %}
+    <tr>
+      <td class="mono">{{ view.arows[aid].asset_no }}</td>
+      <td class="mono">
+        {% if view.arows[aid].active %}{{ view.arows[aid].pole_source }}/{{ view.arows[aid].pole_no }}{% else %}<span class="muted">—（新版清单已无此号）</span>{% endif %}
+      </td>
+      <td>
+        {% if view.asset_status[aid] == 'spare' %}<span class="tag ok">空余可分配</span>
+        {% elif view.asset_status[aid] == 'locked' %}<span class="tag info">已核对单占号</span>
+        {% elif view.asset_status[aid] == 'inactive' %}<span class="tag bad">已停用</span>
+        {% else %}<span class="tag bad">已改挂别杆</span>{% endif %}
+      </td>
+      <td class="muted">
+        {% if view.asset_status[aid] == 'spare' %}新版清单中挂在本组灯杆上，待核对单可用
+        {% elif view.asset_status[aid] == 'locked' %}
+          {% if aid in view.locked_holders %}{% for tid in view.locked_holders[aid] %}已核对单 {{ view.trows[tid].source }}/{{ view.trows[tid].ticket_no }} 沿用此号，组内其他单不可用{% endfor %}{% endif %}
+          {% if not view.arows[aid].active %}（该号同时已停用，行保留可回查）{% elif (view.arows[aid].pole_source, view.arows[aid].pole_no) not in view.pole_tuples %}（该号已改挂到别的灯杆）{% endif %}
+        {% elif view.asset_status[aid] == 'inactive' %}新版清单中消失，仅保留给历史入仓回查
+        {% else %}同号已改挂到另一根灯杆，本组待核对单不可再用{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
 </div>
 
 <div class="card">
@@ -47,26 +78,32 @@
         <p><b>方案 {{ loop.index }}：撤销确认</b> <code>{{ opt.edge_label }}</code>
            {% if view.selection and view.selection.confirmation_id == opt.confirmation_id %}<span class="tag ok">已选</span>{% endif %}
         </p>
-        <p class="muted">撤销后组内按同杆关系拆成 {{ opt.partitions | length }} 个子组，各子组的唯一归属如下：</p>
+        <p class="muted">撤销后组内按同杆关系拆成 {{ opt.partitions | length }} 个子组，各子组的唯一归属如下（待核对单只取同组空余活动资产号，已核对单沿用原号占号）：</p>
         {% for sub in opt.partitions %}
         <table style="margin-bottom:10px">
-          <tr><th>子组灯杆</th><th>故障单</th><th>归属资产号</th><th>备注</th></tr>
+          <tr><th>子组灯杆</th><th>故障单</th><th>归属资产号</th><th>资产状态</th><th>备注</th></tr>
           {% for tid in sub.ticket_ids %}
           <tr>
             <td class="mono">{{ sub.trows[tid].pole_source }}/{{ sub.trows[tid].pole_no }}</td>
             <td class="mono">{{ sub.trows[tid].source }}/{{ sub.trows[tid].ticket_no }}</td>
             <td class="mono">{{ sub.arows[sub.assignment[tid]].asset_no }}</td>
+            <td>
+              {% set aid = sub.assignment[tid] %}
+              {% if not sub.arows[aid].active %}<span class="tag bad">已停用</span>
+              {% elif (sub.arows[aid].pole_source, sub.arows[aid].pole_no) not in sub.pole_tuples %}<span class="tag bad">已移走</span>
+              {% else %}<span class="tag ok">活动</span>{% endif %}
+            </td>
             <td>{% if tid in view.verified_ticket_ids %}<span class="tag ok">已核对，归属不变</span>{% else %}<span class="tag info">新单唯一归属</span>{% endif %}</td>
           </tr>
           {% endfor %}
         </table>
         {% endfor %}
-        <button type="submit">按最新资料复算并执行此方案</button>
+        <button type="submit">按提交时生效的整版清单复算并执行此方案</button>
       </form>
     </div>
     {% endfor %}
-    <p class="muted">执行时系统会再次按最新资料复算：只有“已核对单归属不变”且“最新组内新单也都有唯一归属”时才撤销确认并生成整组入仓清单；
-      条件不符或写入失败时保留原关系和归属并提示原因。</p>
+    <p class="muted">执行时系统会按撤销提交这一刻生效的整版清单再次复算：只有“已核对单归属不变（停用/移走也照样占号）”且“最新组内新单也都有同组空余资产号唯一归属”时才撤销确认并生成整组入仓清单；
+      条件不符或写入失败时提示重选，保留原关系和入仓记录。</p>
   {% endif %}
 </div>
 {% endblock %}

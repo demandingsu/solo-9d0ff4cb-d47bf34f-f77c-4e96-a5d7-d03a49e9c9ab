@@ -34,7 +34,12 @@ def index():
             "SELECT * FROM batch ORDER BY id DESC LIMIT 20"
         ).fetchall()
         stats = {
-            "assets": conn.execute("SELECT COUNT(*) c FROM asset").fetchone()["c"],
+            "assets": conn.execute(
+                "SELECT COUNT(*) c FROM asset WHERE active=1"
+            ).fetchone()["c"],
+            "inactive_assets": conn.execute(
+                "SELECT COUNT(*) c FROM asset WHERE active=0"
+            ).fetchone()["c"],
             "tickets": conn.execute("SELECT COUNT(*) c FROM ticket").fetchone()["c"],
             "active_confirms": conn.execute(
                 "SELECT COUNT(*) c FROM confirmation WHERE active=1"
@@ -46,8 +51,11 @@ def index():
                 "SELECT COUNT(*) c FROM warehouse"
             ).fetchone()["c"],
         }
+        version = services.current_asset_version(conn)
         groups = services.list_groups(conn)
-        return render_template("index.html", batches=batches, stats=stats, groups=groups)
+        return render_template(
+            "index.html", batches=batches, stats=stats, groups=groups, version=version
+        )
     finally:
         conn.close()
 
@@ -61,7 +69,7 @@ def upload():
         return redirect(url_for("index"))
     raw = file.read()
     if not raw.strip():
-        flash("上传文件为空", "error")
+        flash("上传文件为空，已保留旧表未做任何改动", "error")
         return redirect(url_for("index"))
     importers = {
         "asset": services.import_assets,
@@ -127,7 +135,9 @@ def warehouse_view(warehouse_id: int):
             return redirect(url_for("index"))
         items = conn.execute(
             "SELECT t.source, t.ticket_no, t.pole_source, t.pole_no, a.asset_no, "
-            "v.verified_at, wi.ticket_id IN (SELECT ticket_id FROM verified) AS is_verified "
+            "a.active AS asset_active, a.pole_source AS asset_pole_source, "
+            "a.pole_no AS asset_pole_no, v.verified_at, "
+            "wi.ticket_id IN (SELECT ticket_id FROM verified) AS is_verified "
             "FROM warehouse_item wi "
             "JOIN ticket t ON t.id=wi.ticket_id "
             "JOIN asset a ON a.id=wi.asset_id "
@@ -135,6 +145,14 @@ def warehouse_view(warehouse_id: int):
             "WHERE wi.warehouse_id=? ORDER BY t.source, t.ticket_no",
             (warehouse_id,),
         ).fetchall()
-        return render_template("warehouse.html", wh=wh, items=items)
+        version = None
+        if wh["asset_version_id"] is not None:
+            version = conn.execute(
+                "SELECT * FROM asset_version WHERE id=?",
+                (wh["asset_version_id"],),
+            ).fetchone()
+        return render_template(
+            "warehouse.html", wh=wh, items=items, version=version
+        )
     finally:
         conn.close()

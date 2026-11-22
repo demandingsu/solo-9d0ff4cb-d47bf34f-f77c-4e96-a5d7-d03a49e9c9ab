@@ -3,15 +3,23 @@
 {% block body %}
 <div class="card">
   <h2>整组入仓清单 #{{ wh.id }}</h2>
-  <p class="muted">冲突组 <span class="mono">{{ wh.group_key }}</span> ｜ 生成时间 {{ wh.created_at }}</p>
+  <p class="muted">冲突组 <span class="mono">{{ wh.group_key }}</span> ｜ 生成时间 {{ wh.created_at }}
+    {% if version %} ｜ 撤销提交时生效的资产清单：第 <b>{{ version.id }}</b> 版（<span class="mono">{{ version.filename }}</span>）{% endif %}
+  </p>
   <table>
-    <tr><th>#</th><th>故障单（来源/单号）</th><th>灯杆（来源/灯杆号）</th><th>归属资产号</th><th>核对状态</th></tr>
+    <tr><th>#</th><th>故障单（来源/单号）</th><th>灯杆（来源/灯杆号）</th><th>归属资产号</th><th>资产当前状态</th><th>核对状态</th></tr>
     {% for it in items %}
     <tr>
       <td>{{ loop.index }}</td>
       <td class="mono">{{ it.source }}/{{ it.ticket_no }}</td>
       <td class="mono">{{ it.pole_source }}/{{ it.pole_no }}</td>
       <td class="mono">{{ it.asset_no }}</td>
+      <td>
+        {% if not it.asset_active %}<span class="tag bad">已停用</span><span class="muted">（行保留，照旧回查原号）</span>
+        {% elif (it.asset_pole_source, it.asset_pole_no) != (it.pole_source, it.pole_no) %}
+          <span class="tag bad">已改挂</span><span class="muted">（现挂 {{ it.asset_pole_source }}/{{ it.asset_pole_no }}，入仓归属不变）</span>
+        {% else %}<span class="tag ok">活动，仍挂原杆</span>{% endif %}
+      </td>
       <td>{% if it.is_verified %}<span class="tag ok">已核对（归属保持不变）</span>
           {% else %}<span class="tag info">本次新核对</span>{% endif %}</td>
     </tr>

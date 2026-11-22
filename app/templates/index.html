@@ -4,7 +4,7 @@
   <h2>数据上传（故障单与同杆确认支持补传）</h2>
   <table>
     <tr>
-      <th>资产号清单（全量替换）</th>
+      <th>资产号清单（整版换表，已有入仓记录也可上传）</th>
       <th>故障单（可补传）</th>
       <th>同杆确认（可补传/可再确认）</th>
     </tr>
@@ -25,16 +25,23 @@
       {% endfor %}
     </tr>
   </table>
-  <p class="muted">说明：编号按来源台账区分（页面显示为 <code>来源/编号</code>）；同杆确认具有传递性，撤销后同对灯杆可再次补传确认。</p>
+  <p class="muted">换表规则：编号按来源台账区分（页面显示为 <code>来源/编号</code>）。新版没有的资产号<b>停用</b>（行保留，入仓记录照旧回查原号）；同一资产号可<b>改挂</b>到另一根灯杆。
+    已核对单沿用原资产号并在所在组内占号（即使该号已停用或移走）；待核对单只能用新版清单里同组的空余资产号。文件解析或写入失败时<b>继续用旧表</b>。</p>
 </div>
 
 <div class="card">
   <h2>当前数据</h2>
-  <span class="stat">资产号 <b>{{ stats.assets }}</b></span>
+  <span class="stat">活动资产号 <b>{{ stats.assets }}</b></span>
+  <span class="stat">停用资产号 <b>{{ stats.inactive_assets }}</b></span>
   <span class="stat">故障单 <b>{{ stats.tickets }}</b></span>
   <span class="stat">活动同杆确认 <b>{{ stats.active_confirms }}</b></span>
   <span class="stat">已核对单 <b>{{ stats.verified }}</b></span>
   <span class="stat">入仓组 <b>{{ stats.warehouses }}</b></span>
+  {% if version %}
+  <p class="muted" style="margin-bottom:0">当前生效资产清单：第 <b>{{ version.id }}</b> 版（<span class="mono">{{ version.filename }}</span>，{{ version.created_at }}）；撤销复算按提交时生效的整版清单判定。</p>
+  {% else %}
+  <p class="muted" style="margin-bottom:0">尚未上传过资产清单。</p>
+  {% endif %}
 </div>
 
 <div class="card">
@@ -55,7 +62,9 @@
         {% for tid in g.ticket_ids %}{{ g.trows[tid].source }}/{{ g.trows[tid].ticket_no }}{% if not loop.last %}，{% endif %}{% endfor %}
       </span></td>
       <td>{{ g.asset_ids | length }} 个<br><span class="muted mono">
-        {% for aid in g.asset_ids %}{{ g.arows[aid].asset_no }}{% if not loop.last %}，{% endif %}{% endfor %}
+        {% for aid in g.asset_ids %}
+          {{ g.arows[aid].asset_no }}{% if g.asset_status[aid] == 'locked' %}（占号）{% elif g.asset_status[aid] == 'inactive' %}（停用）{% elif g.asset_status[aid] == 'moved' %}（移走）{% endif %}{% if not loop.last %}，{% endif %}
+        {% endfor %}
       </span></td>
       <td>
         {% if g.feasible %}<span class="tag ok">可唯一归属</span>
